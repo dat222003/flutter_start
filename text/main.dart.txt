@@ -1,0 +1,243 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_start/person.dart';
+import 'package:flutter_start/person_provider.dart';
+import 'package:path/path.dart';
+import 'package:sqflite/sqflite.dart';
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  final database = openDatabase(
+    join(await getDatabasesPath(), 'person.db'),
+    onCreate: (database, version) {
+      String sqlCreate = """
+        Create Table person (
+          id INTEGER PRIMARY KEY,
+          name TEXT,
+          age INTEGER
+         );
+      """;
+      return database.execute(sqlCreate);
+    },
+    version: 1,
+  );
+
+  (await database).insert('person', Person(1, 'name', 23).toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace);
+
+  runApp(
+    MyApp(
+      database: database,
+    ),
+  );
+}
+
+class MyApp extends StatelessWidget {
+  final Future<Database> database;
+
+  const MyApp({Key? key, required this.database}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: Scaffold(
+        appBar: AppBar(
+          title: const Text('Persons List'),
+          backgroundColor: Colors.greenAccent,
+        ),
+        body: PersonsList(database: database),
+      ),
+    );
+  }
+}
+
+class PersonsList extends StatefulWidget {
+  final Future<Database> database;
+
+  const PersonsList({Key? key, required this.database}) : super(key: key);
+
+  @override
+  _PersonsListState createState() => _PersonsListState();
+}
+
+class _PersonsListState extends State<PersonsList> {
+  late List<Person> persons = [];
+  late PersonProvider personProvider;
+  int idCounter = 2;
+
+  @override
+  void initState() {
+    super.initState();
+    personProvider = PersonProvider(
+      database: widget.database,
+    );
+    loadPersons();
+  }
+
+  Future<void> loadPersons() async {
+    final loadedPersons = await personProvider.getPersons();
+    setState(() {
+      persons = loadedPersons;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ElevatedButton(
+          onPressed: () {
+            var person = Person(idCounter, 'John Doe', 30);
+            personProvider.insertPerson(person);
+            loadPersons();
+            idCounter++;
+          },
+          child: const Text(
+            'Create Person',
+          ),
+        ),
+        Expanded(
+          child: ListView.builder(
+            itemCount: persons.length,
+            itemBuilder: (context, index) {
+              return Card(
+                elevation: 5,
+                child: Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: TextButton(
+                    onPressed: () async {
+                      final result = await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => PersonDetailsScreen(
+                            person: persons[index],
+                            database: widget.database,
+                          ),
+                        ),
+                      );
+
+                      if (result != null) {
+                        loadPersons();
+                      }
+                    },
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'ID: ${persons[index].id}',
+                            style: PersonCardStyles.personNameStyle,
+                          ),
+                          Text(
+                            'Name: ${persons[index].name}',
+                            style: PersonCardStyles.personNameStyle,
+                          ),
+                          Text(
+                            'Age: ${persons[index].age}',
+                            style: PersonCardStyles.personAgeStyle,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class PersonCardStyles {
+  static const personNameStyle = TextStyle(
+    fontSize: 20,
+    fontWeight: FontWeight.bold,
+  );
+  static const personAgeStyle = TextStyle(
+    fontSize: 16,
+  );
+}
+
+class PersonDetailsScreen extends StatefulWidget {
+  final Person person;
+  final Future<Database> database;
+
+  const PersonDetailsScreen(
+      {Key? key, required this.person, required this.database})
+      : super(key: key);
+
+  @override
+  _PersonDetailsScreenState createState() => _PersonDetailsScreenState();
+}
+
+class _PersonDetailsScreenState extends State<PersonDetailsScreen> {
+  late TextEditingController nameController;
+  late TextEditingController ageController;
+
+  @override
+  void initState() {
+    super.initState();
+    nameController = TextEditingController(text: widget.person.name);
+    ageController = TextEditingController(text: widget.person.age.toString());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text(
+          'Edit Person',
+        ),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            TextField(
+              controller: nameController,
+              decoration: const InputDecoration(
+                labelText: 'Name',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            TextField(
+              controller: ageController,
+              decoration: const InputDecoration(
+                labelText: 'Age',
+                border: OutlineInputBorder(),
+              ),
+              keyboardType: TextInputType.number,
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final person = Person(
+                  widget.person.id,
+                  nameController.text,
+                  int.parse(ageController.text),
+                );
+                await PersonProvider(database: widget.database)
+                    .updatePerson(person);
+                if (!context.mounted) return;
+                Navigator.pop(context, true);
+              },
+              child: const Text('Update'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                await PersonProvider(database: widget.database)
+                    .deletePerson(widget.person.id);
+                if (!context.mounted) return;
+                Navigator.pop(context, true);
+              },
+              child: const Text('Delete'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

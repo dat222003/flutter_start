@@ -1,0 +1,26 @@
+class Person {
+  int id;
+  String name;
+  int age;
+
+  Person(this.id, this.name, this.age);
+
+  Person.fromJson(Map<String, dynamic> json)
+      : id = json['id'] as int,
+        name = json['name'] as String,
+        age = json['age'] as int;
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'id': id,
+        'name': name,
+        'age': age,
+      };
+
+  Map<String, Object?> toMap() {
+    return {
+      'id': id,
+      'name': name,
+      'age': age,
+    };
+  }
+}
